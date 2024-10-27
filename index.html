@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Figures</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+        canvas {
+            border: 1px solid #ccc;
+        }
+        .controls {
+            margin-top: 10px;
+        }
+        button {
+            margin-right: 5px;
+            padding: 8px 12px;
+        }
+        .info {
+            margin-top: 10px;
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="canvas" width="800" height="600"></canvas>
+<div class="controls">
+    <button id="resetButton">Reset</button>
+    <button id="aboutButton">About</button>
+</div>
+<div class="info" id="info"></div>
+
+<script>
+    class Point {
+        constructor(x, y) {
+            this.x = x;
+            this.y = y;
+        }
+
+        distanceTo(point) {
+            return Math.hypot(this.x - point.x, this.y - point.y);
+        }
+
+        isNear(x, y, threshold = 5) {
+            return Math.hypot(this.x - x, this.y - y) < threshold;
+        }
+
+        toString() {
+            return `(${this.x.toFixed(1)}, ${this.y.toFixed(1)})`;
+        }
+    }
+
+    class Circle {
+        constructor(center, circumferencePoint) {
+            this.center = center;
+            this.circumferencePoint = circumferencePoint;
+            this.updateRadius();
+        }
+
+        updateRadius() {
+            this.radius = this.center.distanceTo(this.circumferencePoint);
+        }
+
+        draw(ctx, color) {
+            ctx.strokeStyle = color;
+            ctx.beginPath();
+            ctx.arc(this.center.x, this.center.y, this.radius, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+
+        getIntersections(otherCircle) {
+            const d = this.center.distanceTo(otherCircle.center);
+            const r_this = this.radius;
+            const r_other = otherCircle.radius;
+
+            const haveNoIntersactions = (d > r_this + r_other) || (d < Math.abs(r_this - r_other)) || d === 0;
+            if (haveNoIntersactions) return [];
+
+            const a = (r_this ** 2 - r_other ** 2 + d ** 2) / (2 * d);
+            const h = Math.sqrt(r_this ** 2 - a ** 2);
+            const x0 = this.center.x + (a * (otherCircle.center.x - this.center.x)) / d;
+            const y0 = this.center.y + (a * (otherCircle.center.y - this.center.y)) / d;
+
+            const rx = -(otherCircle.center.y - this.center.y) * (h / d);
+            const ry = (otherCircle.center.x - this.center.x) * (h / d);
+
+            return [
+                new Point(x0 + rx, y0 + ry),
+                new Point(x0 - rx, y0 - ry)
+            ];
+        }
+    }
+
+    class App {
+        constructor(canvas, infoDiv) {
+            this.canvas = canvas;
+            this.ctx = canvas.getContext('2d');
+            this.infoDiv = infoDiv;
+            this.points = [];
+            this.circles = [];
+            this.intersections = [];
+            this.draggingPoint = null;
+            this.isAboutVisible = false;
+
+            this.initEventHandlers();
+        }
+
+        initEventHandlers() {
+            this.canvas.addEventListener('click', this.onCanvasClick.bind(this));
+            this.canvas.addEventListener('mousedown', this.onCanvasMouseDown.bind(this));
+            this.canvas.addEventListener('mousemove', this.onCanvasMouseMove.bind(this));
+            this.canvas.addEventListener('mouseup', this.onCanvasMouseUp.bind(this));
+
+            document.getElementById('resetButton').addEventListener('click', this.reset.bind(this));
+            document.getElementById('aboutButton').addEventListener('click', this.toggleAbout.bind(this));
+        }
+
+
+        onCanvasClick(event) {
+            if (this.points.length < 4) {
+                const { offsetX, offsetY } = event;
+                const newPoint = new Point(offsetX, offsetY);
+                this.points.push(newPoint);
+
+                if (this.points.length % 2 === 0) {
+                    const center = this.points[this.points.length - 2];
+                    const circumferencePoint = this.points[this.points.length - 1];
+                    const circle = new Circle(center, circumferencePoint);
+                    this.circles.push(circle);
+                }
+                this.draw();
+            }
+        }
+
+        onCanvasMouseDown(event) {
+            const { offsetX, offsetY } = event;
+            this.draggingPoint = this.points.find(p => p.isNear(offsetX, offsetY));
+        }
+
+        onCanvasMouseMove(event) {
+            if (this.draggingPoint) {
+                this.draggingPoint.x = event.offsetX;
+                this.draggingPoint.y = event.offsetY;
+
+                this.circles.forEach(circle => circle.updateRadius());
+                this.draw();
+            }
+        }
+
+        onCanvasMouseUp() {
+            this.draggingPoint = null;
+        }
+
+        draw() {
+            this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+            this.points.forEach((point, index) => this.drawPoint(point, index));
+
+            if (this.circles.length === 2) {
+                this.circles[0].draw(this.ctx, 'blue');
+                this.circles[1].draw(this.ctx, 'yellow');
+
+                this.intersections = this.circles[0].getIntersections(this.circles[1]);
+                this.intersections.forEach(point => this.drawPoint(point, null, 'red'));
+                this.updateInfo();
+            }
+        }
+
+        drawPoint(point, index = null, color = 'black') {
+            this.ctx.fillStyle = color;
+            this.ctx.beginPath();
+            this.ctx.arc(point.x, point.y, 5, 0, Math.PI * 2);
+            this.ctx.fill();
+
+            if (index !== null) {
+                const labels = ['A', 'B', 'C', 'D'];
+                this.ctx.fillStyle = 'black';
+                this.ctx.font = '14px Arial';
+                this.ctx.fillText(labels[index], point.x + 8, point.y - 8);
+            }
+        }
+
+        updateInfo() {
+            if (!this.isAboutVisible) {
+                const [A, B, C, D] = this.points;
+                let text = `A: ${A}, B: ${B}\nC: ${C}, D: ${D}\n`;
+                this.intersections.forEach((p, i) => {
+                    text += `Intersection ${i + 1}: ${p}\n`;
+                });
+                this.infoDiv.textContent = text;
+            }
+        }
+
+        reset() {
+            this.points = [];
+            this.circles = [];
+            this.intersections = [];
+            this.isAboutVisible = false;
+            this.infoDiv.textContent = '';
+            this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        }
+
+        toggleAbout() {
+            if (this.isAboutVisible) {
+                this.infoDiv.textContent = '';
+                this.isAboutVisible = false;
+                this.updateInfo();
+            } else {
+                this.infoDiv.textContent = `Geometric Figures Program\nAuthor: Severyn Koziuberda\n\nInstructions:\n1. Click on the canvas to select 4 points.\n2. Points A and B define the blue circle.\n3. Points C and D define the yellow circle.\n4. Drag points to move them.\n5. Use 'Reset' to start over.`;
+                this.isAboutVisible = true;
+            }
+        }
+    }
+
+    const canvas = document.getElementById('canvas');
+    const infoDiv = document.getElementById('info');
+    const app = new App(canvas, infoDiv);
+</script>
+
+</body>
+</html>
